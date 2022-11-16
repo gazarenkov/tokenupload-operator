@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-name
+  labels:
+    spi.appstudio.redhat.com/token: ""
+type: Opaque
+stringData:
+  providerUrl: <url, for ex https://github.com>
+  #spiTokenName: <the name of existed token instead of provider url>
+  tokenData: <token data - do not commit the real value to git!>

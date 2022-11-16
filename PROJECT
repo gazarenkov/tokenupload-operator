@@ -1,0 +1,19 @@
+domain: github.com
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: testsecret-operator
+repo: github.com/gazarenkov/testsecret-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: github.com
+  group: core
+  kind: Secret
+  path: github.com/gazarenkov/testsecret-operator/api/v1
+  version: v1
+version: "3"
