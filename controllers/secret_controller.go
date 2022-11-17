@@ -18,9 +18,9 @@ package controllers
 
 import (
 	"context"
-
 	"github.com/redhat-appstudio/service-provider-integration-operator/pkg/spi-shared/tokenstorage"
 	"k8s.io/apimachinery/pkg/types"
+	"time"
 
 	//"k8s.io/apimachinery/pkg/labels"
 
@@ -48,15 +48,6 @@ type SecretReconciler struct {
 //+kubebuilder:rbac:groups=core.github.com,resources=secrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core.github.com,resources=secrets/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Secret object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.2/pkg/reconcile
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
@@ -65,32 +56,40 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	err := r.List(context.TODO(), list, client.HasLabels{tokenSeretLabel})
 	if err != nil {
 		log.Log.Error(err, "Can not get list of secrets ")
+		return ctrl.Result{}, err
 	}
 
 	for _, s := range list.Items {
 
 		var accessToken spi.SPIAccessToken
 
+		// we immediatelly delete the Secret
 		err := r.Delete(context.TODO(), &s)
 		if err != nil {
-			logError(s.Name, req.Namespace, err, r, "can not delete Secret ")
+			logError(s, err, r, "can not delete the Secret ")
 			return ctrl.Result{}, err
 		}
 
+		// if spiTokenName field is not empty - try to find SPIAccessToken by it
 		if len(s.Data["spiTokenName"]) > 0 {
 			accessToken = spi.SPIAccessToken{}
 			err = r.Get(context.TODO(), types.NamespacedName{Name: string(s.Data["spiTokenName"]), Namespace: s.Namespace}, &accessToken)
 
 			if err != nil {
-				logError(s.Name, req.Namespace, err, r, "can not find SPI access token "+string(s.Data["spiTokenName"]))
+				logError(s, err, r, "can not find SPI access token "+string(s.Data["spiTokenName"]))
 				return ctrl.Result{}, err
 			} else {
 				log.Log.Info("SPI Access Token found : " + accessToken.Name)
 			}
+			// spiTokenName field is empty
+			// check providerUrl field and if not empty - try to find the token for this provider instance
 
 		} else if len(s.Data["providerUrl"]) > 0 {
 
+			// NOTE: it does not fit advanced policy of matching token!
+			// Do we need it as an SPI "API function" which take into account this policy?
 			tkn := findTokenByUrl(string(s.Data["providerUrl"]), r)
+			// create new SPIAccessToken if there are no for such provider instance (URL)
 			if tkn == nil {
 
 				log.Log.Info("can not find SPI access token trying to create new one")
@@ -105,9 +104,11 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 				err = r.Create(context.TODO(), &accessToken)
 				if err != nil {
-					logError(s.Name, req.Namespace, err, r, " can not create SPI access token for "+string(s.Data["providerUrl"]))
+					logError(s, err, r, " can not create SPI access token for "+string(s.Data["providerUrl"]))
 					return ctrl.Result{}, err
 				} else {
+					// this is the only place where we can get the name of just created SPIAccessToken
+					// which is presumably OK since SPI (binding) controller will look for the token by type/URL ?
 					log.Log.Info("SPI Access Token created : " + accessToken.Name)
 				}
 			} else {
@@ -116,7 +117,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 		} else {
-			logError(s.Name, req.Namespace, err, r, "Secret is invalid, neither spiTokenName nor providerUrl key found")
+			logError(s, err, r, "Secret is invalid, neither spiTokenName nor providerUrl key found")
 			return ctrl.Result{}, err
 		}
 
@@ -129,7 +130,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 		err = r.TokenStorage.Store(ctx, &accessToken, &token)
 		if err != nil {
-			logError(s.Name, req.Namespace, err, r, "store failed ")
+			logError(s, err, r, "store failed ")
 			return ctrl.Result{}, err
 		}
 
@@ -147,29 +148,30 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func logError(secretName string, ns string, err error, r *SecretReconciler, msg string) {
+func logError(secret corev1.Secret, err error, r *SecretReconciler, msg string) {
 
-	tryDeleteEvent(secretName, ns, r)
+	log.Log.Info("Error Event for Secret: " + secret.Name)
+
+	tryDeleteEvent(secret.Name, secret.Namespace, r)
 
 	if err != nil {
 		event := &corev1.Event{}
-		//event.GenerateName = "Secret-"
-		event.Name = secretName
+		event.Name = secret.Name
 		event.Message = msg
-		event.Namespace = ns
+		event.Namespace = secret.Namespace
+		event.Reason = "Can not update access token"
 		//event.Source = corev1.EventSource{}
-		//event.InvolvedObject = corev1.ObjectReference{Namespace: req.Namespace, Name: s.Name, Kind: s.Kind, APIVersion: s.APIVersion}
+		event.InvolvedObject = corev1.ObjectReference{Namespace: secret.Namespace, Name: secret.Name, Kind: secret.Kind, APIVersion: secret.APIVersion}
 		event.Type = "Error"
-		event.Labels = map[string]string{
-			"secretRef": secretName,
-		}
-		//event.EventTime = time.Now()
+		//event.EventTime = metav1.NewTime(Now())
+		event.LastTimestamp = metav1.NewTime(time.Now())
 
-		err = r.Create(context.TODO(), event)
+		err1 := r.Create(context.TODO(), event)
 
 		log.Log.Error(err, msg)
-		if err != nil {
-			log.Log.Error(err, "Event creation failed ")
+
+		if err1 != nil {
+			log.Log.Error(err1, "Event creation failed ")
 		}
 	}
 
