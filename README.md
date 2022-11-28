@@ -18,16 +18,16 @@ You’ll need a Kubernetes cluster to run against. The only environment it was t
 Red Hat AppStudio SPI-operator should be installed here as a prerequisite.
 Operator uses Vault backend to store secrets and connects to the remote Vault instance using with following environment variables:
   
- VAULTHOST : URL to the Vault server, to get it you can call ./hack/vault-host.sh
+ **VAULTHOST** : URL to the Vault server, to get it you can call ./hack/vault-host.sh
   In case if it is not reachable on operator start time you will get the error like:
  
- VAULTINSECURETLS : whether the Vault tls connection can use untrusted certificate [false]
+ **VAULTINSECURETLS** : whether the Vault tls connection can use untrusted certificate [false]
   ERROR   setup   failed to log in to the token storage   {"error": "wrapped storage error: error while authenticating: 
   unable to log in to auth method: unable to log in with app role auth: Put \"https://vault.192.168.64.6.nip.io/v1/auth/approle/login\": 
   x509: “Kubernetes Ingress Controller Fake Certificate” certificate is not trusted"}
- VAULTAPPROLEROLEIDFILEPATH : path to the file storing Vault approle's ROLE_ID for authentication [/etc/spi/role_id]
+ **VAULTAPPROLEROLEIDFILEPATH** : path to the file storing Vault approle's ROLE_ID for authentication [/etc/spi/role_id]
   It has to be created upfront and filled with appropriate approle's role_id (same as stored in the SPI Operator's container)
- VAULTAPPROLESECRETIDFILEPATH : path to the file storing Vault approle's SECRET_ID for authentication [/etc/spi/secret_id]
+ **VAULTAPPROLESECRETIDFILEPATH** : path to the file storing Vault approle's SECRET_ID for authentication [/etc/spi/secret_id]
   It has to be created upfront and filled with appropriate approle's secret_id (same as stored in the SPI Operator's container)
 
 To run the Operator using current context of your kubeconfig outside of the cluster:
@@ -61,9 +61,10 @@ EOF
 
 What's important:
 
-- the secret is labeled with spi.appstudio.redhat.com/token: ""  
-- secret data should contain tokenData field  with actual token to store
-- secret data should contain either providerUrl with Service Provider base URL or spiTokenName with the name of SPIAccessToken object to update
+- the secret is labeled with **spi.appstudio.redhat.com/token: ""**  
+- secret data should contain **tokenData** field  with actual token from the Service Provider to store. 
+For example, to reach a private GitHub repository, you should get the Personal Access Token from your GitHub/Settings/Developer Settings/Personal access tokens.
+- secret data should contain either **providerUrl** with Service Provider base URL or **spiTokenName** with the name of SPIAccessToken object to update
 
 After creating the Secret, controller reads the token, either updates or creates new secret in the Vault database and 
 updates or creates SPIAccessToken with the reference to the Vault record and immediately deletes the Secret
